@@ -24,7 +24,7 @@ export interface BookingService {
 
 export interface BookingData {
   services: BookingService[]
-  contactInfo: string[]
+  contactInfo: string[] // kept as string[] to match your existing usage
   arrivalWindow: ArrivalWindow
   additionalDetails?: string
   photos?: string[]
@@ -178,6 +178,42 @@ const validateBookingData = (data: BookingData): void => {
   }
 }
 
+/**
+ * Parse a raw Appwrite document into a BookingDocument.
+ * - Safely parses services (string[] of JSON) into BookingService[]
+ * - Leaves other fields as-is (trusting the stored document shape)
+ */
+const parseBookingDocument = (raw: any): BookingDocument => {
+  const servicesRaw = Array.isArray(raw?.services) ? raw.services : []
+  const servicesParsed: BookingService[] = servicesRaw
+    .map((s: any) => {
+      if (!s) return null
+      try {
+        // If it's a JSON string, parse it. If it's already an object, return as-is.
+        if (typeof s === "string") {
+          return JSON.parse(s) as BookingService
+        } else if (typeof s === "object") {
+          return s as BookingService
+        }
+        return null
+      } catch (e) {
+        console.warn("Failed to parse booking service entry:", e)
+        return null
+      }
+    })
+    .filter(Boolean) as BookingService[]
+
+  // Build the booking document shape
+  // Some SDK fields (like $id, $createdAt) come from Models.Document
+  const parsed: BookingDocument = {
+    // Spread everything available in raw (we trust Appwrite document contains the expected fields)
+    ...(raw as BookingDocumentRaw),
+    services: servicesParsed,
+  }
+
+  return parsed
+}
+
 // Main functions
 export const createBooking = async (data: BookingData): Promise<string> => {
   try {
@@ -265,33 +301,15 @@ export const createBooking = async (data: BookingData): Promise<string> => {
         createdAt: response.$createdAt,
       }
 
-      // Send notification to admin
-
       await sendBookingNotification(emailBookingData)
-
-      // Optionally send confirmation to customer
-      /* 
-      if (process.env.SEND_CUSTOMER_CONFIRMATION === "true") {
-        console.log("Sending confirmation to customer...")
-        const customerEmailResult = await sendCustomerConfirmation(emailBookingData)
-
-        if (customerEmailResult.success) {
-          console.log("Customer confirmation sent successfully:", customerEmailResult.messageId)
-        } else {
-          console.error("Failed to send customer confirmation:", customerEmailResult.error)
-        }
-      }
-      */
     } catch (emailError) {
       console.error("Email notification error (booking still successful):", emailError)
-      // Don't throw error - booking was successful, email failure shouldn't affect the booking
     }
 
     return response.$id
   } catch (error) {
     console.error("Booking creation failed:", error)
 
-    // Enhanced error messaging
     if (error instanceof Error) {
       if (error.message.includes("Collection with the requested ID could not be found")) {
         throw new Error(
@@ -317,16 +335,18 @@ export const createBooking = async (data: BookingData): Promise<string> => {
   }
 }
 
+/**
+ * Returns an array of BookingDocument with services parsed into BookingService[]
+ */
 export const listBookings = async (): Promise<BookingDocument[]> => {
   try {
     const response = await databases.listDocuments(DATABASE_ID, BOOKINGS_COLLECTION_ID, [
       Query.orderDesc("$createdAt"),
     ])
 
-    const parsed = response.documents.map((booking) => ({
-      ...booking,
-      services: booking.services.map((s: string) => JSON.parse(s)),
-    }))
+    const parsed = response.documents.map((booking) => {
+      return parseBookingDocument(booking)
+    })
 
     return parsed
   } catch (error) {
@@ -347,7 +367,10 @@ export const listBookings = async (): Promise<BookingDocument[]> => {
   }
 }
 
-export const getBookingById = async (id: string): Promise<BookingDocumentRaw> => {
+/**
+ * Get a single booking by ID and return BookingDocument (services parsed)
+ */
+export const getBookingById = async (id: string): Promise<BookingDocument> => {
   try {
     if (!id || typeof id !== "string") {
       throw new Error("Valid booking ID is required")
@@ -355,7 +378,7 @@ export const getBookingById = async (id: string): Promise<BookingDocumentRaw> =>
 
     const response = await databases.getDocument(DATABASE_ID, BOOKINGS_COLLECTION_ID, id)
 
-    return response as BookingDocumentRaw
+    return parseBookingDocument(response)
   } catch (error) {
     console.error("Error fetching booking:", error)
 
@@ -371,6 +394,9 @@ export const getBookingById = async (id: string): Promise<BookingDocumentRaw> =>
   }
 }
 
+/**
+ * Storage helpers
+ */
 export const getPhotoUrl = (fileId: string): string => {
   try {
     if (!fileId || typeof fileId !== "string") {
@@ -399,10 +425,13 @@ export const getPhotoPreviewUrl = (fileId: string, width = 400, height = 400): s
   }
 }
 
+/**
+ * Update booking status and return parsed BookingDocument
+ */
 export const updateBookingStatus = async (
   id: string,
   status: "confirmed" | "cancelled"
-): Promise<BookingDocumentRaw> => {
+): Promise<BookingDocument> => {
   try {
     if (!id || typeof id !== "string") {
       throw new Error("Valid booking ID is required")
@@ -416,7 +445,7 @@ export const updateBookingStatus = async (
       status,
     })
 
-    return response as BookingDocumentRaw
+    return parseBookingDocument(response)
   } catch (error) {
     console.error("Error updating booking status:", error)
 
@@ -432,6 +461,9 @@ export const updateBookingStatus = async (
   }
 }
 
+/**
+ * Delete booking and attached photos
+ */
 export const deleteBooking = async (id: string): Promise<void> => {
   try {
     if (!id || typeof id !== "string") {

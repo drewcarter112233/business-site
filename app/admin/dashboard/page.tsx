@@ -6,6 +6,7 @@ import { format } from "date-fns"
 import Image from "next/image"
 import { Phone, X, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import { BookingDocument } from "@/lib/appwrite"
+import { useRouter } from "next/navigation"
 
 interface ParsedContact {
   name?: string
@@ -380,6 +381,13 @@ export default function AdminDashboard() {
     })
   }
 
+  const router = useRouter()
+
+  async function handleLogout() {
+    await fetch("/api/admin/logout", { method: "POST" })
+    router.push("/admin") // back to login page
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
@@ -453,26 +461,34 @@ export default function AdminDashboard() {
                   Manage and track all your bookings efficiently
                 </p>
               </div>
-              <button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-400 disabled:to-slate-500 text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none disabled:cursor-not-allowed"
-              >
-                <svg
-                  className={`w-5 h-5 mr-2 ${isRefreshing ? "animate-spin" : ""}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <div className="flex items-center justify-center gap-10">
+                <button
+                  onClick={handleRefresh}
+                  disabled={isRefreshing}
+                  className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-400 disabled:to-slate-500 text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none disabled:cursor-not-allowed"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-                {isRefreshing ? "Refreshing..." : "Refresh"}
-              </button>
+                  <svg
+                    className={`w-5 h-5 mr-2 ${isRefreshing ? "animate-spin" : ""}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  {isRefreshing ? "Refreshing..." : "Refresh"}
+                </button>
+                <button
+                  onClick={handleLogout}
+                  className="px-6 py-3 bg-gradient-to-r from-red-400 to-red-500 hover:from-red-600 hover:to-red-600 disabled:from-slate-400 disabled:to-slate-500 text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1 disabled:transform-none disabled:cursor-not-allowed"
+                >
+                  Logout
+                </button>
+              </div>
             </div>
           </div>
 
