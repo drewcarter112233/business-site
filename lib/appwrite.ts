@@ -24,7 +24,7 @@ export interface BookingService {
 
 export interface BookingData {
   services: BookingService[]
-  contactInfo: string[] // kept as string[] to match your existing usage
+  contactInfo: string[]
   arrivalWindow: ArrivalWindow
   additionalDetails?: string
   photos?: string[]
@@ -54,20 +54,18 @@ const requiredEnvVars = {
   BUCKET_ID: process.env.NEXT_PUBLIC_APPWRITE_BUCKET_ID,
 } as const
 
-// Validate environment variables on module load
 for (const [key, value] of Object.entries(requiredEnvVars)) {
   if (!value) {
     console.error(`Missing required environment variable: NEXT_PUBLIC_${key}`)
   }
 }
 
-// Initialize Appwrite client with error handling
+// Initialize Appwrite client
 const createAppwriteClient = () => {
   try {
     const client = new Client()
       .setEndpoint("https://nyc.cloud.appwrite.io/v1")
       .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID!)
-
     return client
   } catch (error) {
     console.error("Failed to initialize Appwrite client:", error)
@@ -79,12 +77,11 @@ const client = createAppwriteClient()
 const databases = new Databases(client)
 const storage = new Storage(client)
 
-// Constants
 const DATABASE_ID = requiredEnvVars.DATABASE_ID!
 const BOOKINGS_COLLECTION_ID = requiredEnvVars.COLLECTION_ID!
 const PHOTOS_BUCKET_ID = requiredEnvVars.BUCKET_ID!
 
-// Utility functions
+// Helpers
 const validateBase64Image = (dataUrl: string): boolean => {
   if (!dataUrl || typeof dataUrl !== "string") return false
   const base64Pattern = /^data:image\/(png|jpg|jpeg|gif|webp);base64,/
@@ -94,18 +91,13 @@ const validateBase64Image = (dataUrl: string): boolean => {
 const convertBase64ToFile = (dataUrl: string, filename: string): File => {
   try {
     const [header, base64Data] = dataUrl.split(",")
-    if (!base64Data) {
-      throw new Error("Invalid base64 data format")
-    }
+    if (!base64Data) throw new Error("Invalid base64 data format")
 
-    // Extract MIME type
     const mimeMatch = header.match(/data:([^;]+);/)
     const mimeType = mimeMatch ? mimeMatch[1] : "image/png"
 
-    // Convert to binary
     const binaryString = atob(base64Data)
     const bytes = new Uint8Array(binaryString.length)
-
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i)
     }
@@ -126,15 +118,14 @@ const generateUniqueFilename = (extension = "png"): string => {
   return `photo-${timestamp}-${random}.${extension}`
 }
 
-// Validation functions
 const validateBookingData = (data: BookingData): void => {
   const errors: string[] = []
 
-  if (!data.services || !Array.isArray(data.services) || data.services.length === 0) {
+  if (!data.services || data.services.length === 0) {
     errors.push("At least one service must be selected")
   }
 
-  if (!data.contactInfo || typeof data.contactInfo !== "object") {
+  if (!data.contactInfo || !Array.isArray(data.contactInfo)) {
     errors.push("Contact information is required")
   } else {
     const contactObj: Record<string, string> = {}
@@ -162,8 +153,6 @@ const validateBookingData = (data: BookingData): void => {
     const { date, time } = data.arrivalWindow
     if (!date?.trim()) errors.push("Arrival date is required")
     if (!time?.trim()) errors.push("Arrival time is required")
-
-    // Validate date format
     if (date && isNaN(Date.parse(date))) {
       errors.push("Invalid arrival date format")
     }
@@ -178,102 +167,41 @@ const validateBookingData = (data: BookingData): void => {
   }
 }
 
-/**
- * Parse a raw Appwrite document into a BookingDocument.
- * - Safely parses services (string[] of JSON) into BookingService[]
- * - Leaves other fields as-is (trusting the stored document shape)
- */
-const parseBookingDocument = (raw: any): BookingDocument => {
-  const servicesRaw = Array.isArray(raw?.services) ? raw.services : []
-  const servicesParsed: BookingService[] = servicesRaw
-    .map((s: any) => {
-      if (!s) return null
-      try {
-        // If it's a JSON string, parse it. If it's already an object, return as-is.
-        if (typeof s === "string") {
-          return JSON.parse(s) as BookingService
-        } else if (typeof s === "object") {
-          return s as BookingService
-        }
-        return null
-      } catch (e) {
-        console.warn("Failed to parse booking service entry:", e)
-        return null
-      }
-    })
-    .filter(Boolean) as BookingService[]
-
-  // Build the booking document shape
-  // Some SDK fields (like $id, $createdAt) come from Models.Document
-  const parsed: BookingDocument = {
-    // Spread everything available in raw (we trust Appwrite document contains the expected fields)
-    ...(raw as BookingDocumentRaw),
-    services: servicesParsed,
-  }
-
-  return parsed
-}
+// Transform helper
+const parseBookingDocument = (booking: BookingDocumentRaw): BookingDocument => ({
+  ...booking,
+  services: booking.services.map((s: string) => JSON.parse(s) as BookingService),
+})
 
 // Main functions
 export const createBooking = async (data: BookingData): Promise<string> => {
   try {
-    // Validate environment variables
     if (!DATABASE_ID || !BOOKINGS_COLLECTION_ID || !PHOTOS_BUCKET_ID) {
       throw new Error("Missing required configuration. Please check your environment variables.")
     }
 
-    // Validate booking data
     validateBookingData(data)
 
     const photoIds: string[] = []
 
-    // Upload photos if provided
-    if (data.photos && Array.isArray(data.photos) && data.photos.length > 0) {
+    if (data.photos?.length) {
       for (let i = 0; i < data.photos.length; i++) {
         const photo = data.photos[i]
-
         try {
           if (!validateBase64Image(photo)) {
             console.warn(`Skipping invalid photo at index ${i}`)
             continue
           }
-
           const filename = generateUniqueFilename()
           const file = convertBase64ToFile(photo, filename)
-
-          // Upload with retry logic
-          let uploadAttempts = 0
-          const maxAttempts = 3
-          let uploadResponse
-
-          while (uploadAttempts < maxAttempts) {
-            try {
-              uploadResponse = await storage.createFile(PHOTOS_BUCKET_ID, ID.unique(), file)
-              break
-            } catch (uploadError) {
-              uploadAttempts++
-              console.warn(`Upload attempt ${uploadAttempts} failed for photo ${i}:`, uploadError)
-
-              if (uploadAttempts === maxAttempts) {
-                throw uploadError
-              }
-
-              // Wait before retry
-              await new Promise((resolve) => setTimeout(resolve, 1000 * uploadAttempts))
-            }
-          }
-
-          if (uploadResponse) {
-            photoIds.push(uploadResponse.$id)
-          }
+          const uploadResponse = await storage.createFile(PHOTOS_BUCKET_ID, ID.unique(), file)
+          photoIds.push(uploadResponse.$id)
         } catch (photoError) {
           console.error(`Error uploading photo ${i}:`, photoError)
-          // Continue with other photos instead of failing entirely
         }
       }
     }
 
-    // Prepare document data
     const docData = {
       services: data.services.map((s) => JSON.stringify(s)),
       contact: data.contactInfo,
@@ -285,7 +213,6 @@ export const createBooking = async (data: BookingData): Promise<string> => {
       total_amount: data.total,
     }
 
-    // Create booking document
     const response = await databases.createDocument(
       DATABASE_ID,
       BOOKINGS_COLLECTION_ID,
@@ -293,14 +220,12 @@ export const createBooking = async (data: BookingData): Promise<string> => {
       docData
     )
 
-    // Send email notifications after successful booking creation
     try {
       const emailBookingData: EmailBookingData = {
         ...data,
         bookingId: response.$id,
         createdAt: response.$createdAt,
       }
-
       await sendBookingNotification(emailBookingData)
     } catch (emailError) {
       console.error("Email notification error (booking still successful):", emailError)
@@ -309,193 +234,88 @@ export const createBooking = async (data: BookingData): Promise<string> => {
     return response.$id
   } catch (error) {
     console.error("Booking creation failed:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("Collection with the requested ID could not be found")) {
-        throw new Error(
-          "Bookings collection not found. Please verify your collection ID and database setup."
-        )
-      }
-      if (error.message.includes("Database with the requested ID could not be found")) {
-        throw new Error(
-          "Database not found. Please verify your database ID and project configuration."
-        )
-      }
-      if (error.message.includes("Project with the requested ID could not be found")) {
-        throw new Error("Project not found. Please verify your project ID.")
-      }
-      if (error.message.includes("network")) {
-        throw new Error("Network error. Please check your internet connection and try again.")
-      }
-    }
-
     throw new Error(
       `Failed to create booking: ${error instanceof Error ? error.message : "Unknown error"}`
     )
   }
 }
 
-/**
- * Returns an array of BookingDocument with services parsed into BookingService[]
- */
 export const listBookings = async (): Promise<BookingDocument[]> => {
   try {
     const response = await databases.listDocuments(DATABASE_ID, BOOKINGS_COLLECTION_ID, [
       Query.orderDesc("$createdAt"),
     ])
 
-    const parsed = response.documents.map((booking) => {
-      return parseBookingDocument(booking)
-    })
+    const docs = response.documents as unknown as BookingDocumentRaw[]
+    const parsed: BookingDocument[] = docs.map(parseBookingDocument)
 
     return parsed
   } catch (error) {
     console.error("Error fetching bookings:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("Collection with the requested ID could not be found")) {
-        throw new Error("Bookings collection not found. Please check your database setup.")
-      }
-      if (error.message.includes("Database with the requested ID could not be found")) {
-        throw new Error("Database not found. Please check your database configuration.")
-      }
-    }
-
     throw new Error(
       `Failed to fetch bookings: ${error instanceof Error ? error.message : "Unknown error"}`
     )
   }
 }
 
-/**
- * Get a single booking by ID and return BookingDocument (services parsed)
- */
 export const getBookingById = async (id: string): Promise<BookingDocument> => {
   try {
-    if (!id || typeof id !== "string") {
-      throw new Error("Valid booking ID is required")
-    }
-
+    if (!id) throw new Error("Valid booking ID is required")
     const response = await databases.getDocument(DATABASE_ID, BOOKINGS_COLLECTION_ID, id)
-
-    return parseBookingDocument(response)
+    return parseBookingDocument(response as unknown as BookingDocumentRaw)
   } catch (error) {
     console.error("Error fetching booking:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("Document with the requested ID could not be found")) {
-        throw new Error("Booking not found")
-      }
-    }
-
     throw new Error(
       `Failed to fetch booking: ${error instanceof Error ? error.message : "Unknown error"}`
     )
   }
 }
 
-/**
- * Storage helpers
- */
-export const getPhotoUrl = (fileId: string): string => {
-  try {
-    if (!fileId || typeof fileId !== "string") {
-      console.warn("Invalid file ID provided for photo URL")
-      return ""
-    }
+export const getPhotoUrl = (fileId: string): string =>
+  storage.getFileView(PHOTOS_BUCKET_ID, fileId).toString()
 
-    return storage.getFileView(PHOTOS_BUCKET_ID, fileId).toString()
-  } catch (error) {
-    console.error("Error getting photo URL:", error)
-    return ""
-  }
-}
+export const getPhotoPreviewUrl = (fileId: string, width = 400, height = 400): string =>
+  storage.getFilePreview(PHOTOS_BUCKET_ID, fileId, width, height).toString()
 
-export const getPhotoPreviewUrl = (fileId: string, width = 400, height = 400): string => {
-  try {
-    if (!fileId || typeof fileId !== "string") {
-      console.warn("Invalid file ID provided for photo preview URL")
-      return ""
-    }
-
-    return storage.getFilePreview(PHOTOS_BUCKET_ID, fileId, width, height).toString()
-  } catch (error) {
-    console.error("Error getting photo preview URL:", error)
-    return ""
-  }
-}
-
-/**
- * Update booking status and return parsed BookingDocument
- */
 export const updateBookingStatus = async (
   id: string,
   status: "confirmed" | "cancelled"
 ): Promise<BookingDocument> => {
   try {
-    if (!id || typeof id !== "string") {
-      throw new Error("Valid booking ID is required")
-    }
-
-    if (!status || !["confirmed", "cancelled"].includes(status)) {
-      throw new Error("Status must be either 'confirmed' or 'cancelled'")
-    }
+    if (!id) throw new Error("Valid booking ID is required")
+    if (!status) throw new Error("Status must be either 'confirmed' or 'cancelled'")
 
     const response = await databases.updateDocument(DATABASE_ID, BOOKINGS_COLLECTION_ID, id, {
       status,
     })
 
-    return parseBookingDocument(response)
+    return parseBookingDocument(response as unknown as BookingDocumentRaw)
   } catch (error) {
     console.error("Error updating booking status:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("Document with the requested ID could not be found")) {
-        throw new Error("Booking not found")
-      }
-    }
-
     throw new Error(
       `Failed to update booking status: ${error instanceof Error ? error.message : "Unknown error"}`
     )
   }
 }
 
-/**
- * Delete booking and attached photos
- */
 export const deleteBooking = async (id: string): Promise<void> => {
   try {
-    if (!id || typeof id !== "string") {
-      throw new Error("Valid booking ID is required")
-    }
+    if (!id) throw new Error("Valid booking ID is required")
 
-    // Get booking to retrieve photo IDs for cleanup
     const booking = await getBookingById(id)
-
-    // Delete associated photos
-    if (booking.photos && Array.isArray(booking.photos) && booking.photos.length > 0) {
+    if (booking.photos?.length) {
       for (const photoId of booking.photos) {
         try {
           await storage.deleteFile(PHOTOS_BUCKET_ID, photoId)
         } catch (photoError) {
           console.warn(`Failed to delete photo ${photoId}:`, photoError)
-          // Continue with deletion even if photo cleanup fails
         }
       }
     }
 
-    // Delete booking document
     await databases.deleteDocument(DATABASE_ID, BOOKINGS_COLLECTION_ID, id)
   } catch (error) {
     console.error("Error deleting booking:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("Document with the requested ID could not be found")) {
-        throw new Error("Booking not found")
-      }
-    }
-
     throw new Error(
       `Failed to delete booking: ${error instanceof Error ? error.message : "Unknown error"}`
     )
@@ -505,7 +325,6 @@ export const deleteBooking = async (id: string): Promise<void> => {
 export const getStorageInfo = async () => {
   try {
     const files = await storage.listFiles(PHOTOS_BUCKET_ID)
-
     return {
       total: files.total,
       files: files.files,
@@ -513,13 +332,6 @@ export const getStorageInfo = async () => {
     }
   } catch (error) {
     console.error("Storage bucket error:", error)
-
-    if (error instanceof Error) {
-      if (error.message.includes("Bucket with the requested ID could not be found")) {
-        throw new Error("Storage bucket not found. Please verify your bucket ID.")
-      }
-    }
-
     throw new Error(
       `Failed to access storage: ${error instanceof Error ? error.message : "Unknown error"}`
     )
