@@ -9,7 +9,6 @@ import {
   Shield,
   Award,
   CheckCircle,
-  Info,
   Sparkles,
   Users,
   Zap,
@@ -171,11 +170,6 @@ export default async function ServiceDetailPage({ params }: PageProps) {
               className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-2xl p-8 border border-slate-200/50 dark:border-slate-700/50"
             >
               <div className="flex items-center space-x-4 mb-6">
-                <div
-                  className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${categoryInfo.gradient} flex items-center justify-center text-white text-2xl shadow-lg`}
-                >
-                  {categoryInfo.icon}
-                </div>
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
                     Service Overview
@@ -247,9 +241,6 @@ export default async function ServiceDetailPage({ params }: PageProps) {
               className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-2xl p-8 border border-slate-200/50 dark:border-slate-700/50"
             >
               <div className="flex items-center space-x-3 mb-6">
-                <div className="p-2 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg">
-                  <Info className="w-5 h-5 text-white" />
-                </div>
                 <div>
                   <h3 className="text-xl font-bold text-slate-900 dark:text-slate-100">
                     Why Choose This Service?
@@ -323,11 +314,6 @@ export default async function ServiceDetailPage({ params }: PageProps) {
                   className={`bg-gradient-to-br ${categoryInfo.bgGradient} backdrop-blur-sm rounded-2xl p-8 border border-slate-200/50 dark:border-slate-700/50 shadow-lg`}
                 >
                   <div className="text-center mb-6">
-                    <div
-                      className={`w-20 h-20 rounded-2xl bg-gradient-to-br ${categoryInfo.gradient} flex items-center justify-center text-white text-3xl shadow-lg mx-auto mb-4`}
-                    >
-                      {categoryInfo.icon}
-                    </div>
                     <h3 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
                       Ready to Book?
                     </h3>

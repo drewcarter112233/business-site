@@ -121,6 +121,6 @@ export const categories = [
   {
     id: "additional-cleaning",
     name: "Additional Cleaning",
-    description: "Loveseat or Chair, Sofa, Sectional Sofa, Rug, Tile",
+    description: "Loveseat, Sofa, Sectional Sofa, Rug, Tile",
   },
 ]

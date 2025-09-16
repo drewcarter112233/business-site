@@ -459,7 +459,7 @@ ${booking.photos.length} reference photo${booking.photos.length !== 1 ? "s" : ""
 ⚠️ This booking requires confirmation. Please contact the customer to confirm the appointment details.
 
 ---
-AB Carpet Cleaning 
+Business Website 
 Automated Booking Notification
   `
 }

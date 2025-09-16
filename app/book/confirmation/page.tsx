@@ -25,7 +25,6 @@ import {
 } from "lucide-react"
 import {
   FadeInDiv,
-  FadeInUp,
   SlideInLeft,
   SlideInRight,
   ScaleIn,
@@ -137,27 +136,6 @@ export default function ConfirmationPage() {
             <span>Back to Schedule</span>
           </button>
         </SlideInLeft>
-
-        {/* Header Section */}
-        <FadeInUp delay={0.1} className="text-center mb-8">
-          <ScaleIn
-            delay={0.2}
-            className="inline-flex items-center space-x-2 bg-gradient-to-r from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 px-4 py-2 rounded-full text-emerald-600 dark:text-emerald-400 text-sm font-medium mb-6 border border-emerald-200/50 dark:border-emerald-700/50 backdrop-blur-sm"
-          >
-            <CheckCircle className="w-4 h-4" />
-            <span>Ready to Confirm</span>
-          </ScaleIn>
-
-          <h1 className="text-4xl md:text-5xl font-bold mb-2">
-            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              HOFFMAN CLEANING
-            </span>
-          </h1>
-
-          <FadeInDiv delay={0.3} className="text-lg text-slate-600 dark:text-slate-400">
-            Review your booking details and confirm your appointment
-          </FadeInDiv>
-        </FadeInUp>
 
         {/* Booking Stepper */}
         <BookingStepper />

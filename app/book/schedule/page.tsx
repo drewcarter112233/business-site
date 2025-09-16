@@ -19,7 +19,6 @@ import {
 } from "lucide-react"
 import {
   FadeInDiv,
-  FadeInUp,
   SlideInLeft,
   SlideInRight,
   ScaleIn,
@@ -149,30 +148,6 @@ export default function SchedulePage() {
             <span>Back to Contact</span>
           </button>
         </SlideInLeft>
-
-        {/* Header Section */}
-        <FadeInUp delay={0.1} className="text-center mb-8">
-          <ScaleIn
-            delay={0.2}
-            className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 px-4 py-2 rounded-full text-blue-600 dark:text-blue-400 text-sm font-medium mb-6 border border-blue-200/50 dark:border-blue-700/50 backdrop-blur-sm"
-          >
-            <Calendar className="w-4 h-4" aria-hidden="true" />
-            <span>Schedule Appointment</span>
-          </ScaleIn>
-
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold mb-2">
-            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              AB Carpet Cleaning
-            </span>
-          </h1>
-
-          <FadeInDiv
-            delay={0.3}
-            className="text-base sm:text-lg text-slate-600 dark:text-slate-400 px-4"
-          >
-            Choose your preferred date and time for our arrival
-          </FadeInDiv>
-        </FadeInUp>
 
         {/* Booking Stepper */}
         <div className="mb-8">

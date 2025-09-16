@@ -19,10 +19,8 @@ import {
 } from "lucide-react"
 import {
   FadeInDiv,
-  FadeInUp,
   SlideInLeft,
   SlideInRight,
-  ScaleIn,
   HoverButton,
   HoverCard,
   AnimatedIcon,
@@ -150,27 +148,6 @@ export default function ContactPage() {
           </button>
         </SlideInLeft>
 
-        {/* Header Section */}
-        <FadeInUp delay={0.1} className="text-center mb-8">
-          <ScaleIn
-            delay={0.2}
-            className="inline-flex items-center space-x-2 bg-gradient-to-r from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30 px-4 py-2 rounded-full text-blue-600 dark:text-blue-400 text-sm font-medium mb-6 border border-blue-200/50 dark:border-blue-700/50 backdrop-blur-sm"
-          >
-            <User className="w-4 h-4" />
-            <span>Contact Information</span>
-          </ScaleIn>
-
-          <h1 className="text-4xl md:text-5xl font-bold mb-2">
-            <span className="bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              HOFFMAN CLEANING
-            </span>
-          </h1>
-
-          <FadeInDiv delay={0.3} className="text-lg text-slate-600 dark:text-slate-400">
-            Let&apos;s get your contact details to complete your booking
-          </FadeInDiv>
-        </FadeInUp>
-
         {/* Booking Stepper */}
         <BookingStepper />
 
@@ -182,9 +159,6 @@ export default function ContactPage() {
               className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-2xl p-8 border border-slate-200/50 dark:border-slate-700/50 shadow-lg"
             >
               <div className="flex items-center space-x-4 mb-8">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
-                  <User className="w-6 h-6" />
-                </div>
                 <div>
                   <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
                     Contact Details

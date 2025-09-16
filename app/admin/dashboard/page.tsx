@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, memo } from "react"
 import { listBookings, updateBookingStatus, getPhotoUrl, deleteBooking } from "@/lib/appwrite"
 import { format } from "date-fns"
 import Image from "next/image"
@@ -8,6 +8,7 @@ import { Phone, X, ChevronLeft, ChevronRight, Trash2 } from "lucide-react"
 import { BookingDocument } from "@/lib/appwrite"
 import { useRouter } from "next/navigation"
 
+// Types
 interface ParsedContact {
   name?: string
   email?: string
@@ -35,7 +36,42 @@ interface DeleteConfirmModalProps {
   customerName: string
 }
 
-function DeleteConfirmModal({
+interface BookingCardProps {
+  booking: BookingDocument
+  index: number
+  onDeleteClick: (bookingId: string, customerName: string) => void
+  onImageClick: (images: string[], index: number) => void
+  onStatusUpdate: (id: string, status: "confirmed" | "cancelled") => void
+}
+
+// Constants
+const ITEMS_PER_PAGE = 4
+const FIELD_MAPPING = ["name", "email", "phone", "address", "unit", "city", "state", "zip"] as const
+
+// Utility functions
+const parseContactJson = (contactArr: string[]): ParsedContact => {
+  if (!contactArr?.length) return {}
+
+  try {
+    return JSON.parse(contactArr[0])
+  } catch {
+    const result: ParsedContact = {}
+    contactArr.forEach((value, index) => {
+      if (value?.trim() && FIELD_MAPPING[index]) {
+        result[FIELD_MAPPING[index]] = value.trim()
+      }
+    })
+    return result
+  }
+}
+
+const cleanContactField = (field?: string): string => {
+  if (!field) return "Unknown"
+  return field.split(":")[1] || field
+}
+
+// Memoized Modal Components
+const DeleteConfirmModal = memo(function DeleteConfirmModal({
   isOpen,
   onClose,
   onConfirm,
@@ -46,10 +82,7 @@ function DeleteConfirmModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-
-      {/* Modal Content */}
       <div className="relative z-10 bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl border border-slate-200 dark:border-slate-700">
         <div className="flex items-center space-x-4 mb-6">
           <div className="flex-shrink-0 w-12 h-12 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
@@ -92,38 +125,56 @@ function DeleteConfirmModal({
       </div>
     </div>
   )
-}
+})
 
-function ImageModal({ isOpen, onClose, images, currentIndex, onNavigate }: ImageModalProps) {
+const ImageModal = memo(function ImageModal({
+  isOpen,
+  onClose,
+  images,
+  currentIndex,
+  onNavigate,
+}: ImageModalProps) {
   const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
+  const handleKeyPress = useCallback(
+    (e: KeyboardEvent) => {
       if (!isOpen) return
 
-      if (e.key === "Escape") {
-        onClose()
-      } else if (e.key === "ArrowLeft") {
-        onNavigate(currentIndex > 0 ? currentIndex - 1 : images.length - 1)
-      } else if (e.key === "ArrowRight") {
-        onNavigate(currentIndex < images.length - 1 ? currentIndex + 1 : 0)
+      switch (e.key) {
+        case "Escape":
+          onClose()
+          break
+        case "ArrowLeft":
+          onNavigate(currentIndex > 0 ? currentIndex - 1 : images.length - 1)
+          break
+        case "ArrowRight":
+          onNavigate(currentIndex < images.length - 1 ? currentIndex + 1 : 0)
+          break
       }
-    }
+    },
+    [isOpen, currentIndex, images.length, onClose, onNavigate]
+  )
 
+  useEffect(() => {
     document.addEventListener("keydown", handleKeyPress)
     return () => document.removeEventListener("keydown", handleKeyPress)
-  }, [isOpen, currentIndex, images.length, onClose, onNavigate])
+  }, [handleKeyPress])
+
+  const handlePrevious = useCallback(() => {
+    onNavigate(currentIndex > 0 ? currentIndex - 1 : images.length - 1)
+  }, [currentIndex, images.length, onNavigate])
+
+  const handleNext = useCallback(() => {
+    onNavigate(currentIndex < images.length - 1 ? currentIndex + 1 : 0)
+  }, [currentIndex, images.length, onNavigate])
 
   if (!isOpen) return null
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/90 backdrop-blur-sm" onClick={onClose} />
 
-      {/* Modal Content */}
       <div className="relative z-10 w-full h-full flex items-center justify-center p-4">
-        {/* Close Button */}
         <button
           onClick={onClose}
           className="absolute top-6 right-6 z-20 p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all duration-200 hover:scale-110"
@@ -131,17 +182,16 @@ function ImageModal({ isOpen, onClose, images, currentIndex, onNavigate }: Image
           <X className="w-6 h-6" />
         </button>
 
-        {/* Navigation Buttons */}
         {images.length > 1 && (
           <>
             <button
-              onClick={() => onNavigate(currentIndex > 0 ? currentIndex - 1 : images.length - 1)}
+              onClick={handlePrevious}
               className="absolute left-6 z-20 p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all duration-200 hover:scale-110"
             >
               <ChevronLeft className="w-6 h-6" />
             </button>
             <button
-              onClick={() => onNavigate(currentIndex < images.length - 1 ? currentIndex + 1 : 0)}
+              onClick={handleNext}
               className="absolute right-6 z-20 p-3 bg-black/50 hover:bg-black/70 text-white rounded-full transition-all duration-200 hover:scale-110"
             >
               <ChevronRight className="w-6 h-6" />
@@ -149,7 +199,6 @@ function ImageModal({ isOpen, onClose, images, currentIndex, onNavigate }: Image
           </>
         )}
 
-        {/* Image Container */}
         <div className="relative w-[90vw] h-[90vh] bg-black rounded-2xl overflow-hidden shadow-2xl flex justify-center items-center">
           {isLoading && (
             <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
@@ -167,46 +216,452 @@ function ImageModal({ isOpen, onClose, images, currentIndex, onNavigate }: Image
           />
         </div>
 
-        {/* Image Counter */}
         {images.length > 1 && (
-          <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20">
-            <div className="bg-black/70 text-white px-4 py-2 rounded-full text-sm font-medium">
-              {currentIndex + 1} / {images.length}
+          <>
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-20">
+              <div className="bg-black/70 text-white px-4 py-2 rounded-full text-sm font-medium">
+                {currentIndex + 1} / {images.length}
+              </div>
             </div>
-          </div>
-        )}
 
-        {/* Thumbnail Navigation */}
-        {images.length > 1 && (
-          <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20">
-            <div className="flex space-x-2 bg-black/50 p-2 rounded-xl backdrop-blur-sm max-w-sm overflow-x-auto">
-              {images.map((imageId, index) => (
-                <button
-                  key={imageId}
-                  onClick={() => onNavigate(index)}
-                  className={`flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all duration-200 ${
-                    index === currentIndex
-                      ? "border-white scale-110"
-                      : "border-white/30 hover:border-white/60"
-                  }`}
-                >
-                  <Image
-                    src={getPhotoUrl(imageId)}
-                    alt={`Thumbnail ${index + 1}`}
-                    width={48}
-                    height={48}
-                    className="w-full h-full object-cover"
-                  />
-                </button>
-              ))}
+            <div className="absolute bottom-20 left-1/2 transform -translate-x-1/2 z-20">
+              <div className="flex space-x-2 bg-black/50 p-2 rounded-xl backdrop-blur-sm max-w-sm overflow-x-auto">
+                {images.map((imageId, index) => (
+                  <button
+                    key={imageId}
+                    onClick={() => onNavigate(index)}
+                    className={`flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden border-2 transition-all duration-200 ${
+                      index === currentIndex
+                        ? "border-white scale-110"
+                        : "border-white/30 hover:border-white/60"
+                    }`}
+                  >
+                    <Image
+                      src={getPhotoUrl(imageId)}
+                      alt={`Thumbnail ${index + 1}`}
+                      width={48}
+                      height={48}
+                      className="w-full h-full object-cover"
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
   )
-}
+})
 
+// Memoized Stat Card Component
+const StatCard = memo(function StatCard({
+  stat,
+  index,
+}: {
+  stat: { label: string; value: string | number; icon: string; bgClass: string }
+  index: number
+}) {
+  return (
+    <div
+      className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 shadow-sm border border-slate-200/50 dark:border-slate-700/50 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
+      style={{ animationDelay: `${index * 100}ms` }}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+            {stat.label}
+          </p>
+          <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">{stat.value}</p>
+        </div>
+        <div className={`p-3 ${stat.bgClass} rounded-xl text-white text-xl shadow-lg`}>
+          {stat.icon}
+        </div>
+      </div>
+    </div>
+  )
+})
+
+// Memoized Booking Card Component
+const BookingCard = memo(function BookingCard({
+  booking,
+  index,
+  onDeleteClick,
+  onImageClick,
+  onStatusUpdate,
+}: BookingCardProps) {
+  const contact = useMemo(() => parseContactJson(booking.contact), [booking.contact])
+
+  const contactInfo = useMemo(
+    () => ({
+      name: cleanContactField(contact?.name) || "Unknown",
+      email: cleanContactField(contact?.email) || "No email",
+      phone: cleanContactField(contact?.phone) || "No phone",
+      address: cleanContactField(contact?.address) || "No address",
+      city: cleanContactField(contact?.city) || "No City",
+      state: cleanContactField(contact?.state) || "No State",
+      zip: cleanContactField(contact?.zip) || "No Zip",
+    }),
+    [contact]
+  )
+
+  const handleConfirm = useCallback(() => {
+    onStatusUpdate(booking.$id, "confirmed")
+  }, [booking.$id, onStatusUpdate])
+
+  const handleCancel = useCallback(() => {
+    onStatusUpdate(booking.$id, "cancelled")
+  }, [booking.$id, onStatusUpdate])
+
+  const handleDelete = useCallback(() => {
+    onDeleteClick(booking.$id, contactInfo.name)
+  }, [booking.$id, contactInfo.name, onDeleteClick])
+
+  const handlePhotoClick = useCallback(
+    (photoIndex: number) => {
+      onImageClick(booking.photos, photoIndex)
+    },
+    [booking.photos, onImageClick]
+  )
+
+  return (
+    <div
+      className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4 relative"
+      style={{ animationDelay: `${index * 50}ms` }}
+    >
+      {/* Delete Button */}
+      <button
+        onClick={handleDelete}
+        className="absolute top-4 right-4 z-10 p-2 bg-red-100/80 hover:bg-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-lg transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
+        title="Delete booking"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+
+      {/* Booking Header */}
+      <div className="p-6 border-b border-slate-100/50 dark:border-slate-700/50 bg-gradient-to-r from-slate-50/50 to-white/50 dark:from-slate-800/50 dark:to-slate-700/50 backdrop-blur-sm">
+        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start space-y-4 sm:space-y-0 pr-12">
+          <div className="flex-1">
+            <div className="flex items-center space-x-4 mb-3">
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
+                <span className="text-white font-bold text-lg">
+                  {contactInfo.name[0]?.toUpperCase() || "U"}
+                </span>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                  {contactInfo.name}
+                </h2>
+                <p className="text-slate-600 dark:text-slate-400">{contactInfo.email}</p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-4 text-sm text-slate-600 dark:text-slate-400">
+              <div className="flex items-center">
+                <Phone className="w-4 h-4 mr-2" /> {contactInfo.phone}
+              </div>
+              <div className="flex items-center">
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                  />
+                </svg>
+                ID: {booking.$id.slice(-8)}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <span
+              className={`inline-flex px-4 py-2 rounded-full text-sm font-semibold shadow-sm ${
+                booking.status === "confirmed"
+                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  : booking.status === "cancelled"
+                  ? "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800"
+                  : "bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+              }`}
+            >
+              {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Booking Details */}
+      <div className="p-6 space-y-4">
+        {/* Date & Time */}
+        <div className="bg-gradient-to-br from-blue-50/70 to-blue-100/70 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-4 border border-blue-200/50 dark:border-blue-700/50 backdrop-blur-sm">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-blue-500 rounded-lg shadow-sm">
+              <svg
+                className="w-5 h-5 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900 dark:text-slate-100">Scheduled</p>
+              <p className="text-slate-600 dark:text-slate-400">
+                {format(new Date(booking.arrival_date), "MMM dd, yyyy")} at {booking.arrival_time}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Address */}
+        <div className="bg-gradient-to-br from-emerald-50/70 to-emerald-100/70 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-xl p-4 border border-emerald-200/50 dark:border-emerald-700/50 backdrop-blur-sm">
+          <div className="flex items-start space-x-3">
+            <div className="p-2 bg-emerald-500 rounded-lg shadow-sm">
+              <svg
+                className="w-5 h-5 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
+                />
+              </svg>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-900 dark:text-slate-100">Location</p>
+              <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
+                {contactInfo.address}, {contactInfo.city}, {contactInfo.state} {contactInfo.zip}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Services */}
+        <div className="bg-gradient-to-br from-purple-50/70 to-purple-100/70 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl p-4 border border-purple-200/50 dark:border-purple-700/50 backdrop-blur-sm">
+          <div className="flex items-start space-x-3">
+            <div className="p-2 bg-purple-500 rounded-lg shadow-sm">
+              <svg
+                className="w-5 h-5 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+                />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <p className="font-semibold text-slate-900 dark:text-slate-100 mb-3">
+                Services ({booking.services.length})
+              </p>
+              <div className="space-y-2">
+                {booking.services.slice(0, 2).map((service, idx) => (
+                  <div
+                    key={`${service.id}-${idx}`}
+                    className="flex justify-between items-center py-2 px-3 bg-white/50 dark:bg-slate-800/50 rounded-lg border border-slate-200/50 dark:border-slate-600/50 shadow-sm backdrop-blur-sm"
+                  >
+                    <span className="text-slate-700 dark:text-slate-300 font-medium text-sm">
+                      {service.name}
+                    </span>
+                    <span className="font-bold text-slate-900 dark:text-slate-100">
+                      ${service.price}
+                    </span>
+                  </div>
+                ))}
+                {booking.services.length > 2 && (
+                  <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-1">
+                    +{booking.services.length - 2} more services
+                  </div>
+                )}
+              </div>
+              <div className="mt-3 pt-3 border-t border-purple-200/50 dark:border-purple-700/50">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-900 dark:text-slate-100">Total Amount</span>
+                  <span className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                    ${booking.total_amount.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Additional Details */}
+        {booking.additional_details && (
+          <div className="bg-gradient-to-br from-orange-50/70 to-orange-100/70 dark:from-orange-900/20 dark:to-orange-800/20 rounded-xl p-4 border border-orange-200/50 dark:border-orange-700/50 backdrop-blur-sm">
+            <div className="flex items-start space-x-3">
+              <div className="p-2 bg-orange-500 rounded-lg shadow-sm">
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
+                  Additional Details
+                </p>
+                <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed bg-white/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200/50 dark:border-slate-600/50 backdrop-blur-sm">
+                  {booking.additional_details}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Photos Preview */}
+        {booking.photos?.length > 0 && (
+          <div className="bg-gradient-to-br from-pink-50/70 to-pink-100/70 dark:from-pink-900/20 dark:to-pink-800/20 rounded-xl p-4 border border-pink-200/50 dark:border-pink-700/50 backdrop-blur-sm">
+            <div className="flex items-start space-x-3">
+              <div className="p-2 bg-pink-500 rounded-lg shadow-sm">
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-slate-900 dark:text-slate-100 mb-3">
+                  Photos ({booking.photos.length})
+                </p>
+                <div className="flex space-x-2 overflow-x-auto pb-2">
+                  {booking.photos.slice(0, 4).map((photoId: string, photoIndex: number) => (
+                    <div
+                      key={photoId}
+                      className="flex-shrink-0 group aspect-square w-16 h-16 relative border-2 border-slate-200/50 dark:border-slate-600/50 rounded-lg overflow-hidden hover:scale-105 transition-all duration-300 shadow-sm hover:shadow-lg cursor-pointer"
+                      onClick={() => handlePhotoClick(photoIndex)}
+                    >
+                      <Image
+                        src={getPhotoUrl(photoId)}
+                        alt={`Preview ${photoId}`}
+                        fill
+                        className="object-cover group-hover:scale-110 transition-transform duration-300"
+                        sizes="64px"
+                      />
+                      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center">
+                        <svg
+                          className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                  ))}
+                  {booking.photos.length > 4 && (
+                    <div
+                      className="flex-shrink-0 w-16 h-16 bg-slate-200/50 dark:bg-slate-700/50 rounded-lg flex items-center justify-center cursor-pointer hover:bg-slate-300/50 dark:hover:bg-slate-600/50 transition-colors duration-200"
+                      onClick={() => handlePhotoClick(4)}
+                    >
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
+                        +{booking.photos.length - 4}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-slate-200/70 dark:border-slate-700/50">
+          {booking.status !== "confirmed" && (
+            <button
+              onClick={handleConfirm}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 px-4 text-sm transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M5 13l4 4L19 7"
+                />
+              </svg>
+              Confirm
+            </button>
+          )}
+
+          {booking.status !== "cancelled" && (
+            <button
+              onClick={handleCancel}
+              className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg border text-white bg-red-500  border-red-500  hover:bg-red-600 dark:hover:bg-red-600 font-medium py-2.5 px-4 text-sm transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+              Cancel
+            </button>
+          )}
+        </div>
+
+        {/* Created At */}
+        <div className="flex items-center justify-center pt-3">
+          <div className="flex items-center space-x-2 text-slate-500 dark:text-slate-400 text-xs bg-slate-50/50 dark:bg-slate-700/50 px-3 py-1.5 rounded-full backdrop-blur-sm">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <span>Created {format(new Date(booking.$createdAt), "MMM dd, yyyy")}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+})
+
+// Main Component
 export default function AdminDashboard() {
   const [bookings, setBookings] = useState<BookingDocument[]>([])
   const [loading, setLoading] = useState(true)
@@ -235,34 +690,9 @@ export default function AdminDashboard() {
     customerName: "",
   })
 
-  const parseContactJson = useCallback((contactArr: string[]): ParsedContact => {
-    if (!contactArr || !Array.isArray(contactArr) || contactArr.length === 0) return {}
+  const router = useRouter()
 
-    try {
-      return JSON.parse(contactArr[0])
-    } catch {
-      const result: ParsedContact = {}
-      const fieldMapping = [
-        "name",
-        "email",
-        "phone",
-        "address",
-        "unit",
-        "city",
-        "state",
-        "zip",
-      ] as const
-
-      contactArr.forEach((value, index) => {
-        if (value && value.trim() && fieldMapping[index]) {
-          result[fieldMapping[index]] = value.trim()
-        }
-      })
-
-      return result
-    }
-  }, [])
-
+  // Memoized filtered bookings
   const filteredBookings = useMemo(() => {
     return bookings.filter((booking) => {
       const contact = parseContactJson(booking.contact)
@@ -279,10 +709,14 @@ export default function AdminDashboard() {
 
       return matchesSearch && matchesStatus
     })
-  }, [bookings, searchQuery, statusFilter, parseContactJson])
+  }, [bookings, searchQuery, statusFilter])
 
-  const displayedBookings = showAll ? filteredBookings : filteredBookings.slice(0, 4)
+  const displayedBookings = useMemo(
+    () => (showAll ? filteredBookings : filteredBookings.slice(0, ITEMS_PER_PAGE)),
+    [filteredBookings, showAll]
+  )
 
+  // Memoized stats
   const stats = useMemo(() => {
     const total = bookings.length
     const confirmed = bookings.filter((b) => b.status === "confirmed").length
@@ -295,6 +729,42 @@ export default function AdminDashboard() {
     return { total, confirmed, pending, cancelled, revenue }
   }, [bookings])
 
+  // Memoized stat cards data
+  const statCards = useMemo(
+    () => [
+      {
+        label: "Total Bookings",
+        value: stats.total,
+        icon: "📋",
+        color: "blue",
+        bgClass: "bg-gradient-to-br from-blue-500 to-blue-600",
+      },
+      {
+        label: "Confirmed",
+        value: stats.confirmed,
+        icon: "✅",
+        color: "emerald",
+        bgClass: "bg-gradient-to-br from-emerald-500 to-emerald-600",
+      },
+      {
+        label: "Pending",
+        value: stats.pending,
+        icon: "⏳",
+        color: "amber",
+        bgClass: "bg-gradient-to-br from-amber-500 to-amber-600",
+      },
+      {
+        label: "Revenue",
+        value: `${stats.revenue.toFixed(2)}`,
+        icon: "💰",
+        color: "purple",
+        bgClass: "bg-gradient-to-br from-purple-500 to-purple-600",
+      },
+    ],
+    [stats]
+  )
+
+  // Fetch bookings effect
   useEffect(() => {
     const fetchBookings = async () => {
       try {
@@ -313,81 +783,95 @@ export default function AdminDashboard() {
     fetchBookings()
   }, [refresh])
 
-  const handleUpdateStatus = async (id: string, status: "confirmed" | "cancelled") => {
+  // Callback handlers
+  const handleUpdateStatus = useCallback(async (id: string, status: "confirmed" | "cancelled") => {
     try {
       await updateBookingStatus(id, status)
       setRefresh((prev) => prev + 1)
     } catch (err) {
-      console.error("Error in updating booking status:", err)
+      console.error("Error updating booking status:", err)
       setError("Failed to update booking status")
     }
-  }
+  }, [])
 
-  const handleDeleteBooking = async (id: string) => {
+  const handleDeleteBooking = useCallback(async (id: string) => {
     try {
       await deleteBooking(id)
       setRefresh((prev) => prev + 1)
       setDeleteModal({ isOpen: false, bookingId: "", customerName: "" })
     } catch (err) {
-      console.error("Error in deleting booking", err)
+      console.error("Error deleting booking", err)
       setError("Failed to delete booking")
     }
-  }
+  }, [])
 
-  const handleRefresh = async () => {
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true)
     setTimeout(() => {
       setRefresh((prev) => prev + 1)
       setIsRefreshing(false)
     }, 500)
-  }
+  }, [])
 
-  const openImageModal = (images: string[], index: number) => {
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/admin/logout", { method: "POST" })
+      router.push("/admin")
+    } catch (err) {
+      console.error("Logout error:", err)
+    }
+  }, [router])
+
+  // Modal handlers
+  const openImageModal = useCallback((images: string[], index: number) => {
     setImageModal({
       isOpen: true,
       images,
       currentIndex: index,
     })
-  }
+  }, [])
 
-  const closeImageModal = () => {
+  const closeImageModal = useCallback(() => {
     setImageModal({
       isOpen: false,
       images: [],
       currentIndex: 0,
     })
-  }
+  }, [])
 
-  const navigateImage = (index: number) => {
+  const navigateImage = useCallback((index: number) => {
     setImageModal((prev) => ({
       ...prev,
       currentIndex: index,
     }))
-  }
+  }, [])
 
-  const openDeleteModal = (bookingId: string, customerName: string) => {
+  const openDeleteModal = useCallback((bookingId: string, customerName: string) => {
     setDeleteModal({
       isOpen: true,
       bookingId,
       customerName,
     })
-  }
+  }, [])
 
-  const closeDeleteModal = () => {
+  const closeDeleteModal = useCallback(() => {
     setDeleteModal({
       isOpen: false,
       bookingId: "",
       customerName: "",
     })
-  }
+  }, [])
 
-  const router = useRouter()
+  const clearFilters = useCallback(() => {
+    setSearchQuery("")
+    setStatusFilter("all")
+  }, [])
 
-  async function handleLogout() {
-    await fetch("/api/admin/logout", { method: "POST" })
-    router.push("/admin") // back to login page
-  }
+  const toggleShowAll = useCallback(() => {
+    setShowAll((prev) => !prev)
+  }, [])
 
+  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
@@ -407,6 +891,7 @@ export default function AdminDashboard() {
     )
   }
 
+  // Error state
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center p-4">
@@ -494,55 +979,8 @@ export default function AdminDashboard() {
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-            {[
-              {
-                label: "Total Bookings",
-                value: stats.total,
-                icon: "📋",
-                color: "blue",
-                bgClass: "bg-gradient-to-br from-blue-500 to-blue-600",
-              },
-              {
-                label: "Confirmed",
-                value: stats.confirmed,
-                icon: "✅",
-                color: "emerald",
-                bgClass: "bg-gradient-to-br from-emerald-500 to-emerald-600",
-              },
-              {
-                label: "Pending",
-                value: stats.pending,
-                icon: "⏳",
-                color: "amber",
-                bgClass: "bg-gradient-to-br from-amber-500 to-amber-600",
-              },
-              {
-                label: "Revenue",
-                value: `$${stats.revenue.toFixed(2)}`,
-                icon: "💰",
-                color: "purple",
-                bgClass: "bg-gradient-to-br from-purple-500 to-purple-600",
-              },
-            ].map((stat, index) => (
-              <div
-                key={stat.label}
-                className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm rounded-2xl p-6 shadow-sm border border-slate-200/50 dark:border-slate-700/50 hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4"
-                style={{ animationDelay: `${index * 100}ms` }}
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
-                      {stat.label}
-                    </p>
-                    <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">
-                      {stat.value}
-                    </p>
-                  </div>
-                  <div className={`p-3 ${stat.bgClass} rounded-xl text-white text-xl shadow-lg`}>
-                    {stat.icon}
-                  </div>
-                </div>
-              </div>
+            {statCards.map((stat, index) => (
+              <StatCard key={stat.label} stat={stat} index={index} />
             ))}
           </div>
 
@@ -596,7 +1034,7 @@ export default function AdminDashboard() {
                   id="statusFilter"
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full py-3 px-4  bg-slate-50/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-900 dark:text-slate-100 transition-colors duration-200 backdrop-blur-sm"
+                  className="w-full py-3 px-4 bg-slate-50/50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-900 dark:text-slate-100 transition-colors duration-200 backdrop-blur-sm"
                 >
                   <option value="all">All Status</option>
                   <option value="pending">Pending</option>
@@ -645,10 +1083,7 @@ export default function AdminDashboard() {
               </p>
               {(searchQuery || statusFilter !== "all") && (
                 <button
-                  onClick={() => {
-                    setSearchQuery("")
-                    setStatusFilter("all")
-                  }}
+                  onClick={clearFilters}
                   className="mt-4 px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors duration-200"
                 >
                   Clear Filters
@@ -658,393 +1093,23 @@ export default function AdminDashboard() {
           ) : (
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-                {displayedBookings.map((booking, index) => {
-                  const contact = parseContactJson(booking.contact)
-                  const cleanName = contact?.name?.split(":")[1] || contact?.name || "Unknown"
-                  const cleanEmail = contact?.email?.split(":")[1] || contact?.email || "No email"
-                  const cleanPhone = contact?.phone?.split(":")[1] || contact?.phone || "No phone"
-                  const cleanAddress =
-                    contact?.address?.split(":")[1] || contact?.address || "No address"
-                  const cleanCity = contact?.city?.split(":")[1] || contact?.address || "No City"
-                  const cleanState = contact?.state?.split(":")[1] || contact?.address || "No State"
-                  const cleanZip = contact?.zip?.split(":")[1] || contact?.address || "No Zip"
-
-                  return (
-                    <div
-                      key={booking.$id}
-                      className="bg-white/70 dark:bg-slate-800/70 backdrop-blur-sm border border-slate-200/50 dark:border-slate-700/50 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 animate-in fade-in-0 slide-in-from-bottom-4 relative"
-                      style={{ animationDelay: `${index * 50}ms` }}
-                    >
-                      {/* Delete Button */}
-                      <button
-                        onClick={() => openDeleteModal(booking.$id, cleanName)}
-                        className="absolute top-4 right-4 z-10 p-2 bg-red-100/80 hover:bg-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 rounded-lg transition-all duration-200 hover:scale-110 shadow-sm hover:shadow-md"
-                        title="Delete booking"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-
-                      {/* Booking Header */}
-                      <div className="p-6 border-b border-slate-100/50 dark:border-slate-700/50 bg-gradient-to-r from-slate-50/50 to-white/50 dark:from-slate-800/50 dark:to-slate-700/50 backdrop-blur-sm">
-                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start space-y-4 sm:space-y-0 pr-12">
-                          <div className="flex-1">
-                            <div className="flex items-center space-x-4 mb-3">
-                              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
-                                <span className="text-white font-bold text-lg">
-                                  {cleanName[0]?.toUpperCase() || "U"}
-                                </span>
-                              </div>
-                              <div>
-                                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                                  {cleanName}
-                                </h2>
-                                <p className="text-slate-600 dark:text-slate-400">{cleanEmail}</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-4 text-sm text-slate-600 dark:text-slate-400">
-                              <div className="flex items-center">
-                                <Phone className="w-4 h-4 mr-2" /> {cleanPhone}
-                              </div>
-                              <div className="flex items-center">
-                                <svg
-                                  className="w-4 h-4 mr-2"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
-                                  />
-                                </svg>
-                                ID: {booking.$id.slice(-8)}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <span
-                              className={`inline-flex px-4 py-2 rounded-full text-sm font-semibold shadow-sm ${
-                                booking.status === "confirmed"
-                                  ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
-                                  : booking.status === "cancelled"
-                                  ? "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800"
-                                  : "bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-                              }`}
-                            >
-                              {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Booking Details */}
-                      <div className="p-6 space-y-4">
-                        {/* Date & Time */}
-                        <div className="bg-gradient-to-br from-blue-50/70 to-blue-100/70 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl p-4 border border-blue-200/50 dark:border-blue-700/50 backdrop-blur-sm">
-                          <div className="flex items-center space-x-3">
-                            <div className="p-2 bg-blue-500 rounded-lg shadow-sm">
-                              <svg
-                                className="w-5 h-5 text-white"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                />
-                              </svg>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-slate-100">
-                                Scheduled
-                              </p>
-                              <p className="text-slate-600 dark:text-slate-400">
-                                {format(new Date(booking.arrival_date), "MMM dd, yyyy")} at{" "}
-                                {booking.arrival_time}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Address */}
-                        <div className="bg-gradient-to-br from-emerald-50/70 to-emerald-100/70 dark:from-emerald-900/20 dark:to-emerald-800/20 rounded-xl p-4 border border-emerald-200/50 dark:border-emerald-700/50 backdrop-blur-sm">
-                          <div className="flex items-start space-x-3">
-                            <div className="p-2 bg-emerald-500 rounded-lg shadow-sm">
-                              <svg
-                                className="w-5 h-5 text-white"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
-                                />
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"
-                                />
-                              </svg>
-                            </div>
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-slate-100">
-                                Location
-                              </p>
-                              <p className="text-slate-600 dark:text-slate-400 text-sm leading-relaxed">
-                                {cleanAddress}, {cleanCity}, {cleanState} {cleanZip}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Services */}
-                        <div className="bg-gradient-to-br from-purple-50/70 to-purple-100/70 dark:from-purple-900/20 dark:to-purple-800/20 rounded-xl p-4 border border-purple-200/50 dark:border-purple-700/50 backdrop-blur-sm">
-                          <div className="flex items-start space-x-3">
-                            <div className="p-2 bg-purple-500 rounded-lg shadow-sm">
-                              <svg
-                                className="w-5 h-5 text-white"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
-                                />
-                              </svg>
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-semibold text-slate-900 dark:text-slate-100 mb-3">
-                                Services ({booking.services.length})
-                              </p>
-                              <div className="space-y-2">
-                                {booking.services.slice(0, 2).map((service, index) => {
-                                  return (
-                                    <div
-                                      key={`${service.id}-${index}`}
-                                      className="flex justify-between items-center py-2 px-3 bg-white/50 dark:bg-slate-800/50 rounded-lg border border-slate-200/50 dark:border-slate-600/50 shadow-sm backdrop-blur-sm"
-                                    >
-                                      <span className="text-slate-700 dark:text-slate-300 font-medium text-sm">
-                                        {service.name}
-                                      </span>
-                                      <span className="font-bold text-slate-900 dark:text-slate-100">
-                                        ${service.price}
-                                      </span>
-                                    </div>
-                                  )
-                                })}
-                                {booking.services.length > 2 && (
-                                  <div className="text-xs text-slate-500 dark:text-slate-400 text-center py-1">
-                                    +{booking.services.length - 2} more services
-                                  </div>
-                                )}
-                              </div>
-                              <div className="mt-3 pt-3 border-t border-purple-200/50 dark:border-purple-700/50">
-                                <div className="flex justify-between items-center">
-                                  <span className="font-bold text-slate-900 dark:text-slate-100">
-                                    Total Amount
-                                  </span>
-                                  <span className="text-xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
-                                    ${booking.total_amount.toFixed(2)}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Additional Details */}
-                        {booking.additional_details && (
-                          <div className="bg-gradient-to-br from-orange-50/70 to-orange-100/70 dark:from-orange-900/20 dark:to-orange-800/20 rounded-xl p-4 border border-orange-200/50 dark:border-orange-700/50 backdrop-blur-sm">
-                            <div className="flex items-start space-x-3">
-                              <div className="p-2 bg-orange-500 rounded-lg shadow-sm">
-                                <svg
-                                  className="w-5 h-5 text-white"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                                  />
-                                </svg>
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-semibold text-slate-900 dark:text-slate-100 mb-2">
-                                  Additional Details
-                                </p>
-                                <div className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed bg-white/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-200/50 dark:border-slate-600/50 backdrop-blur-sm">
-                                  {booking.additional_details}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Photos Preview */}
-                        {booking.photos && booking.photos.length > 0 && (
-                          <div className="bg-gradient-to-br from-pink-50/70 to-pink-100/70 dark:from-pink-900/20 dark:to-pink-800/20 rounded-xl p-4 border border-pink-200/50 dark:border-pink-700/50 backdrop-blur-sm">
-                            <div className="flex items-start space-x-3">
-                              <div className="p-2 bg-pink-500 rounded-lg shadow-sm">
-                                <svg
-                                  className="w-5 h-5 text-white"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
-                                >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                  />
-                                </svg>
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-semibold text-slate-900 dark:text-slate-100 mb-3">
-                                  Photos ({booking.photos.length})
-                                </p>
-                                <div className="flex space-x-2 overflow-x-auto pb-2">
-                                  {booking.photos
-                                    .slice(0, 4)
-                                    .map((photoId: string, photoIndex: number) => (
-                                      <div
-                                        key={photoId}
-                                        className="flex-shrink-0 group aspect-square w-16 h-16 relative border-2 border-slate-200/50 dark:border-slate-600/50 rounded-lg overflow-hidden hover:scale-105 transition-all duration-300 shadow-sm hover:shadow-lg cursor-pointer"
-                                        onClick={() => openImageModal(booking.photos, photoIndex)}
-                                      >
-                                        <Image
-                                          src={getPhotoUrl(photoId)}
-                                          alt={`Preview ${photoId}`}
-                                          fill
-                                          className="object-cover group-hover:scale-110 transition-transform duration-300"
-                                          sizes="64px"
-                                        />
-                                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-all duration-300 flex items-center justify-center">
-                                          <svg
-                                            className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                                            fill="none"
-                                            stroke="currentColor"
-                                            viewBox="0 0 24 24"
-                                          >
-                                            <path
-                                              strokeLinecap="round"
-                                              strokeLinejoin="round"
-                                              strokeWidth={2}
-                                              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                                            />
-                                          </svg>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  {booking.photos.length > 4 && (
-                                    <div
-                                      className="flex-shrink-0 w-16 h-16 bg-slate-200/50 dark:bg-slate-700/50 rounded-lg flex items-center justify-center cursor-pointer hover:bg-slate-300/50 dark:hover:bg-slate-600/50 transition-colors duration-200"
-                                      onClick={() => openImageModal(booking.photos, 4)}
-                                    >
-                                      <span className="text-xs font-medium text-slate-600 dark:text-slate-400">
-                                        +{booking.photos.length - 4}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Actions */}
-                        <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-3 pt-4 border-t border-slate-200/50 dark:border-slate-700/50">
-                          {booking.status !== "confirmed" && (
-                            <button
-                              onClick={() => handleUpdateStatus(booking.$id, "confirmed")}
-                              className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 group text-sm"
-                            >
-                              <svg
-                                className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M5 13l4 4L19 7"
-                                />
-                              </svg>
-                              Confirm
-                            </button>
-                          )}
-                          {booking.status !== "cancelled" && (
-                            <button
-                              onClick={() => handleUpdateStatus(booking.$id, "cancelled")}
-                              className="flex-1 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 group text-sm"
-                            >
-                              <svg
-                                className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform duration-200"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M6 18L18 6M6 6l12 12"
-                                />
-                              </svg>
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Created At */}
-                        <div className="flex items-center justify-center pt-3">
-                          <div className="flex items-center space-x-2 text-slate-500 dark:text-slate-400 text-xs bg-slate-50/50 dark:bg-slate-700/50 px-3 py-1.5 rounded-full backdrop-blur-sm">
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                              />
-                            </svg>
-                            <span>
-                              Created {format(new Date(booking.$createdAt), "MMM dd, yyyy")}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
+                {displayedBookings.map((booking, index) => (
+                  <BookingCard
+                    key={booking.$id}
+                    booking={booking}
+                    index={index}
+                    onDeleteClick={openDeleteModal}
+                    onImageClick={openImageModal}
+                    onStatusUpdate={handleUpdateStatus}
+                  />
+                ))}
               </div>
 
               {/* See More Button */}
-              {filteredBookings.length > 4 && (
+              {filteredBookings.length > ITEMS_PER_PAGE && (
                 <div className="text-center animate-in fade-in-0 slide-in-from-bottom-4 duration-500">
                   <button
-                    onClick={() => setShowAll(!showAll)}
+                    onClick={toggleShowAll}
                     className="inline-flex items-center px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-medium rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-1"
                   >
                     {showAll ? (
@@ -1079,7 +1144,7 @@ export default function AdminDashboard() {
                             d="M19 9l-7 7-7-7"
                           />
                         </svg>
-                        See More ({filteredBookings.length - 4} remaining)
+                        See More ({filteredBookings.length - ITEMS_PER_PAGE} remaining)
                       </>
                     )}
                   </button>
@@ -1105,7 +1170,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Image Modal */}
+      {/* Modals */}
       <ImageModal
         isOpen={imageModal.isOpen}
         onClose={closeImageModal}
@@ -1114,7 +1179,6 @@ export default function AdminDashboard() {
         onNavigate={navigateImage}
       />
 
-      {/* Delete Confirmation Modal */}
       <DeleteConfirmModal
         isOpen={deleteModal.isOpen}
         onClose={closeDeleteModal}
