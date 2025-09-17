@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
         hostname: "nyc.cloud.appwrite.io",
         pathname: "/v1/storage/buckets/**",
       },
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+      },
     ],
   },
 }
